@@ -276,27 +276,8 @@ def cmd_check(args):
             continue
         
         result = {"name": watch["name"], "url": url, "changed": False}
-        
-        # Keyword check (on new content regardless of diff)
         keywords = watch.get("keywords", [])
-        if keywords:
-            kw_matches = check_keywords(new_content, keywords)
-            if kw_matches:
-                result["keyword_matches"] = kw_matches
-                result["keyword_contexts"] = {}
-                for kw in kw_matches:
-                    result["keyword_contexts"][kw] = extract_keyword_context(new_content, kw)
-                
-                # Save alert
-                alert = {
-                    "url": url,
-                    "name": watch["name"],
-                    "time": now,
-                    "keywords": kw_matches,
-                    "contexts": result["keyword_contexts"],
-                }
-                alert_path = ALERTS_DIR / f"{s}_{int(time.time())}.json"
-                alert_path.write_text(json.dumps(alert, indent=2))
+        added_text = ""  # will be set from diff
         
         if snap_path.exists():
             old_content = snap_path.read_text()
@@ -321,6 +302,7 @@ def cmd_check(args):
                 result["added_lines"] = len(added)
                 result["removed_lines"] = len(removed)
                 result["diff_preview"] = "\n".join(diff[:30])
+                added_text = "\n".join(l[1:] for l in added)
                 
                 # Extract only the added content for summary
                 result["new_content"] = "\n".join(l[1:] for l in added[:20])
@@ -328,6 +310,26 @@ def cmd_check(args):
             snap_path.write_text(new_content)
             watch["content_hash"] = new_hash
             result["note"] = "initial snapshot"
+            added_text = new_content  # for first snapshot, check all content
+        
+        # Keyword check — only on ADDED text (new content from diff)
+        if keywords and added_text:
+            kw_matches = check_keywords(added_text, keywords)
+            if kw_matches:
+                result["keyword_matches"] = kw_matches
+                result["keyword_contexts"] = {}
+                for kw in kw_matches:
+                    result["keyword_contexts"][kw] = extract_keyword_context(added_text, kw)
+                
+                alert = {
+                    "url": url,
+                    "name": watch["name"],
+                    "time": now,
+                    "keywords": kw_matches,
+                    "contexts": result["keyword_contexts"],
+                }
+                alert_path = ALERTS_DIR / f"{s}_{int(time.time())}.json"
+                alert_path.write_text(json.dumps(alert, indent=2))
         
         results.append(result)
     
